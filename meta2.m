@@ -18,7 +18,7 @@ end
 audioData = audioDataCompact;
 clear audioDataCompact;
 
-fprintf('Dados carregados com sucesso! Estrutura contém %d registros.\n', length(audioData));
+fprintf('Dados carregados com sucesso! Estrutura contém %d registos.\n', length(audioData));
 
 % Inicializar a estrutura de features_espectrais para cada elemento
 for i = 1:length(audioData)
@@ -160,6 +160,15 @@ end
 tight = get(gcf, 'Position');
 set(gcf, 'Position', tight);
 
+% Análise de espectros de amplitude
+% Para todos os digitos a informação espectral é acumulada nas frequências a baixo de 1kHz 
+% que faz sentido porque é nesta parte do espectro que está a voz humana
+% Uma exceção a isto são numeros com o som "S" como o 6 e o 7 que têm pequenos picos acime de 1.5kHz
+% O numero 8 tambem tem um pico nos 2kHz, provavelmente devido ao som "T"
+% Todos os números parecem ter o pico mais alto entre os 100Hz e 200Hz
+% Diferentes números têm diferentes quantidades de picos que pode ser útil para distinguir os números
+
+
 fprintf('Análise espectral por dígito concluída.\n');
 
 %% 13. Calcular características espectrais
@@ -227,12 +236,10 @@ for i = 1:length(audioData)
         razao_low_high = 0;
     end
     
-    % 7. Flux espectral (não aplicável para um único frame, mas calculamos para completude)
-    flux = 0;
-    
     % 8. Roll-off espectral (frequência abaixo da qual está 85% da energia)
     if energia_total > 0
         rolloff_idx = find(energia_cumulativa >= 0.85 * energia_total, 1);
+        
         if ~isempty(rolloff_idx)
             rolloff = freq(rolloff_idx);
         else
@@ -241,6 +248,10 @@ for i = 1:length(audioData)
     else
         rolloff = 0;
     end
+
+    % 9. Número de picos espectrais
+    [~, locs] = findpeaks(amplitude, freq, 'MinPeakHeight', max(amplitude)*0.6, 'MinPeakDistance', 40, 'MinPeakProminence', 0.001);
+    num_picos = length(locs);
     
     % Armazenar características na estrutura
     audioData(i).features_espectrais.max_amp = maxAmp;
@@ -250,8 +261,9 @@ for i = 1:length(audioData)
     audioData(i).features_espectrais.spectral_std = spectral_std;
     audioData(i).features_espectrais.energia_bandas = energia_bandas;
     audioData(i).features_espectrais.razao_low_high = razao_low_high;
-    audioData(i).features_espectrais.flux = flux;
     audioData(i).features_espectrais.rolloff = rolloff;
+    audioData(i).features_espectrais.num_picos = num_picos;
+    audioData(i).features_espectrais.locs = locs;
     
     % Exibir progresso a cada 50 arquivos
     if mod(i, 50) == 0
@@ -276,8 +288,9 @@ spectral_std = zeros(length(audioData), 1);
 razao_low_high = zeros(length(audioData), 1);
 rolloff = zeros(length(audioData), 1);
 energia_bandas = zeros(length(audioData), 5); % 5 bandas
+num_picos = zeros(length(audioData), 1);
 
-% Extrair características usando um loop
+% Extrair características
 for i = 1:length(audioData)
     % Verificar se cada campo existe antes de acessá-lo
     if isfield(audioData(i).features_espectrais, 'max_freq')
@@ -320,6 +333,11 @@ for i = 1:length(audioData)
         energia_bandas(i,:) = audioData(i).features_espectrais.energia_bandas;
     else
         energia_bandas(i,:) = zeros(1,5);
+    end
+    if isfield(audioData(i).features_espectrais, 'num_picos')
+        num_picos(i) = audioData(i).features_espectrais.num_picos;
+    else
+        num_picos(i) = 0;
     end
 end
 
@@ -386,12 +404,14 @@ colorbar('Ticks', 0:9, 'TickLabels', {'0', '1', '2', '3', '4', '5', '6', '7', '8
 grid on;
 
 subplot(2, 2, 3);
-scatter(razao_low_high, razao_banda1_banda3, 15, digitos_todos, 'filled');
-title('Razão Baixa/Alta Freq. vs. Razão Bandas 1/3');
-xlabel('Razão Baixa/Alta Freq.');
-ylabel('Razão Bandas 1/3');
+scatter3(centroide, num_picos, rolloff, 30, digitos_todos, 'filled');
+title('Centroide vs. Numero de picos vs. Roll-off');
+xlabel('Centroide (Hz)');
+ylabel('Numero de picos');
+zlabel('Roll-off (Hz)');
 colorbar('Ticks', 0:9, 'TickLabels', {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'});
 grid on;
+view(30, 30);
 
 subplot(2, 2, 4);
 scatter3(centroide, razao_low_high, rolloff, 30, digitos_todos, 'filled');
